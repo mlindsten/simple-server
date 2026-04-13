@@ -2,12 +2,12 @@
 
 /*
 Arguments:
-  port        - Port number to listen on (default: 8080)
-  directory   - Directory to serve files from, absolute or relative to cwd (default: cwd)
-  defaultFile - File to serve when a directory is requested (default: index.html)
+  --port <port>        - Port number to listen on (default: 8080)
+  --directory <path>   - Directory to serve files from, absolute or relative to cwd (default: cwd)
+  --defaultFile <name> - File to serve when a directory is requested (default: index.html)
 
 Example:
-  deno run --allow-net --allow-read server.ts port=3000 directory=static defaultFile=main.html
+  deno run --allow-net --allow-read server.ts --directory static
 */
 
 const contentTypes: Record<string, string> = {
@@ -36,17 +36,16 @@ const args = {
     defaultFile: "index.html",
 };
 
-for (const arg of Deno.args) {
-    const [key, value] = arg.split("=", 2);
-    switch (key) {
-        case "port":
-            args.port = Number(value);
+for (let i = 0, l = Deno.args.length; i < l; i += 1) {
+    switch (Deno.args[i]) {
+        case "--port":
+            args.port = Number(Deno.args[++i]);
             break;
-        case "directory":
-            args.directory = resolvePath(value);
+        case "--directory":
+            args.directory = resolvePath(Deno.args[++i]);
             break;
-        case "defaultFile":
-            args.defaultFile = value;
+        case "--defaultFile":
+            args.defaultFile = Deno.args[++i];
             break;
     }
 }
@@ -94,12 +93,12 @@ async function getRequestedFileInfo(url: string): Promise<RequestedFileInfo> {
     return { path, size, contentType };
 }
 
-function getContentType(fileName: string): string {
-    const lastDotIndex = fileName.lastIndexOf(".");
+function getContentType(filename: string): string {
+    const lastDotIndex = filename.lastIndexOf(".");
     if (lastDotIndex === -1) {
         return "application/octet-stream";
     }
-    const extension = fileName.slice(lastDotIndex + 1);
+    const extension = filename.slice(lastDotIndex + 1);
     return contentTypes[extension] ?? "application/octet-stream";
 }
 
