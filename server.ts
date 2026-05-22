@@ -2,9 +2,10 @@
 
 /*
 Arguments:
-  --port <port>        - Port number to listen on (default: 8080)
-  --directory <path>   - Directory to serve files from, absolute or relative to cwd (default: cwd)
-  --defaultFile <name> - File to serve when a directory is requested (default: index.html)
+  --port <port>         - Port number to listen on (default: 8080)
+  --directory <path>    - Directory to serve files from, absolute or relative to cwd (default: cwd)
+  --defaultFile <name>  - File to serve when a directory is requested (default: index.html)
+  --fallbackFile <name> - File to serve when requested file is not found (no default)
 
 Example:
   deno run --allow-net --allow-read server.ts --directory static
@@ -30,22 +31,25 @@ const contentTypes: Record<string, string> = {
     "svg": "image/svg+xml"
 };
 
-const args = {
+const args: Arguments = {
     port: 8080,
     directory: Deno.cwd(),
-    defaultFile: "index.html",
+    defaultFile: "index.html"
 };
 
-for (let i = 0, l = Deno.args.length; i < l; i += 1) {
-    switch (Deno.args[i]) {
+for (let i = 0, l = Deno.args.length; i < l;) {
+    switch (Deno.args[i++]) {
         case "--port":
-            args.port = Number(Deno.args[++i]);
+            args.port = Number(Deno.args[i++]);
             break;
         case "--directory":
-            args.directory = resolvePath(Deno.args[++i]);
+            args.directory = resolvePath(Deno.args[i++]!);
             break;
         case "--defaultFile":
-            args.defaultFile = Deno.args[++i];
+            args.defaultFile = Deno.args[i++]!;
+            break;
+        case "--fallbackFile":
+            args.fallbackFile = Deno.args[i++]!;
             break;
     }
 }
@@ -76,24 +80,40 @@ async function handler(req: Request): Promise<Response> {
 }
 
 async function getRequestedFileInfo(url: string): Promise<RequestedFileInfo> {
-    let path = args.directory + new URL(url).pathname;
-    let fileInfo;
-    if (path.endsWith("/")) {
-        path += args.defaultFile;
-        fileInfo = await Deno.stat(path);
-    } else {
-        fileInfo = await Deno.stat(path);
-        if (fileInfo.isDirectory) {
-            path += "/" + args.defaultFile;
+    try {
+        let path = args.directory + new URL(url).pathname;
+        let fileInfo;
+        if (path.endsWith("/")) {
+            path += args.defaultFile;
             fileInfo = await Deno.stat(path);
+        } else {
+            fileInfo = await Deno.stat(path);
+            if (fileInfo.isDirectory) {
+                path += "/" + args.defaultFile;
+                fileInfo = await Deno.stat(path);
+            }
         }
+        return {
+            path,
+            size: fileInfo.size,
+            contentType: getContentType(path)
+        };
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound && args.fallbackFile !== undefined) {
+            const path = args.directory + "/" + args.fallbackFile;
+            const fileInfo = await Deno.stat(path);
+            return {
+                path,
+                size: fileInfo.size,
+                contentType: getContentType(path)
+            };
+        }
+        throw error;
     }
-    const size = fileInfo.size;
-    const contentType = getContentType(path.slice(path.lastIndexOf("/") + 1));
-    return { path, size, contentType };
 }
 
-function getContentType(filename: string): string {
+function getContentType(path: string): string {
+    const filename = path.slice(path.lastIndexOf("/") + 1);
     const lastDotIndex = filename.lastIndexOf(".");
     if (lastDotIndex === -1) {
         return "application/octet-stream";
@@ -104,6 +124,13 @@ function getContentType(filename: string): string {
 
 function resolvePath(path: string): string {
     return new URL(path, `file://${Deno.cwd()}/`).pathname;
+}
+
+interface Arguments {
+    port: number;
+    directory: string;
+    defaultFile: string;
+    fallbackFile?: string;
 }
 
 interface RequestedFileInfo {
